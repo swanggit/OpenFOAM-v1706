@@ -54,3 +54,73 @@
 ​      simpleGrading (1  1 1  1  2  2  2  2  3  3  3 3)![img](https://img-blog.csdn.net/20140317105527906?watermark/2/text/aHR0cDovL2Jsb2cuY3Nkbi5uZXQveHh5aGp5/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70/gravity/SouthEast)
 
   每个面都由4个顶点组成的list来定义，点描述的顺序必须遵循以下规则：当从块内部向外看时，描述的点的顺序是顺时针围绕面的一圈。
+
+### OpenFOAM并行计算
+
+拆分算域法，即将一个待解决的计算域分解成为一系列可以单独执行的离散部分，每部分用单独的处理器计算器计算，主要涉及计算域 的分解、并行计算程序、计算结果的合并。
+
+```text
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      decomposeParDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+numberOfSubdomains N;  //分解数，需要将目标分解域分解成n块，n<=计算器总核数，否则会报错。
+method          simple;  //分解方法，主要有4种，即simple,hierarchical,scotch,manual。
+simpleCoeffs       //simpleCoeffs字典，对应simple方法，简单几何分解，计算域依据依据方向被切分
+{
+    n               (2 2 1);  //x,y,z上的分解量。
+    delta           0.001;    //网格偏斜因子。
+}
+hierarchicalCoeffs   //hierarchicalCoeffs字典，对应hierarchical方法，指定首先切分哪个方向
+{
+    n               (1 1 1); //x,y,z上的分解量。
+    delta           0.001; //网格偏斜因子。
+    order           xyz;  //分解顺序。
+}
+scotchCoeffs   //scotchCoeffs字典，对应scotch方法，用户可以为每个处理器分配不同的权重，通过processorweights关键词来指定
+{
+    processorWeights      (wt1 wt2 ...); //每个处理器分配的权重。
+    strategy       b; //分解策略，默认为b。
+}
+manualCoeffs//手动分解法，用户可以直接把某一片网格区域指定给处理器，可通过setFileds进行定义
+{
+    dataFile        ""; //给各个处理器分配任务的字典文件名称。
+}
+distributed     no;//数据是否写入不同硬盘
+roots           ( );//算例目录路径
+// ************************************************************************* //
+```
+
+```
+decomposePar//用来分解网格和场，通过读取decomposeParDict字典文件的参数，分解几何和场文件。
+
+mpirun -np N solvername -parallel //N:并行线程数，由numberOfsubdomains决定
+
+reconstructPar//并行计算结果重组
+```
+
+### 创建轴对称网格
+
+![img](https://cdn.cfd.direct/docs/user-guide-v6/img/user357x.png)
+
+
+
+1. makeAxialMesh输入：
+
+   - 指定对称轴边界命名
+
+   - 要分裂成两个楔形边界（前面和后面）的边界命名
+
+2. collapseEdges
+
+- 删除对称轴上的面
+
+  ```c
+  makeAxialMesh -case testAxial2 -axis center -wedge frontAndBackPlanes -wedgeAngle 5
+  ```
+
